@@ -307,4 +307,172 @@
                     <input type="text" id="entity-bat" class="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-100 font-mono">
                 </div>
                 <div>
-         
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-emerald-300 mb-1">Potência da Bateria (Battery Power)</label>
+                    <input type="text" id="entity-bat-power" class="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-100 font-mono">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-blue-400 mb-1">Rede Elétrica (Deye CT)</label>
+                    <input type="text" id="entity-grid" class="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-100 font-mono">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-teal-400 mb-1">Rede Elétrica (Shelly)</label>
+                    <input type="text" id="entity-shelly" class="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-100 font-mono">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-indigo-400 mb-1">Saída Inversor / Cargas Nativas (Load)</label>
+                    <input type="text" id="entity-inverter-load" class="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-100 font-mono">
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-3 pt-4 border-t border-slate-800">
+                <button onclick="closeConfigModal()" class="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 transition">Cancelar</button>
+                <button onclick="saveEntities()" class="px-4 py-2 rounded-xl text-xs font-bold bg-amber-400 hover:bg-amber-300 text-slate-950 transition">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let appState = { 
+            token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiI1ZTNmMThiOTM0MzE0YzY1OWM1ZTJlMGZiYWU2MTA3NiIsImlhdCI6MTc5MTkyMTQ5OCwiZXhwIjoyMTA3MjgxNDk4fQ._gLpiDQynD-o_zuuEdShzUM0g-jGVFTYOcH3ucE56KU',
+            pv: localStorage.getItem('entity_pv') || 'sensor.deye_pv_power',
+            bat: localStorage.getItem('entity_bat') || 'sensor.deye_battery',
+            batPower: localStorage.getItem('entity_bat_power') || 'sensor.deye_battery_power',
+            grid: localStorage.getItem('entity_grid') || 'sensor.deye_external_ct1_power',
+            shelly: localStorage.getItem('entity_shelly') || 'sensor.shelly_shem_48e729677610_2_current_consumption',
+            inverterLoad: localStorage.getItem('entity_inverter_load') || 'sensor.deye_load_l1_power'
+        };
+
+        function openConfigModal() {
+            document.getElementById('config-modal').classList.remove('hidden');
+            document.getElementById('config-modal').classList.add('flex');
+            document.getElementById('entity-pv').value = appState.pv;
+            document.getElementById('entity-bat').value = appState.bat;
+            document.getElementById('entity-bat-power').value = appState.batPower;
+            document.getElementById('entity-grid').value = appState.grid;
+            document.getElementById('entity-shelly').value = appState.shelly;
+            document.getElementById('entity-inverter-load').value = appState.inverterLoad;
+        }
+
+        function closeConfigModal() {
+            document.getElementById('config-modal').classList.remove('flex');
+            document.getElementById('config-modal').classList.add('hidden');
+        }
+
+        function saveEntities() {
+            appState.pv = document.getElementById('entity-pv').value.trim();
+            appState.bat = document.getElementById('entity-bat').value.trim();
+            appState.batPower = document.getElementById('entity-bat-power').value.trim();
+            appState.grid = document.getElementById('entity-grid').value.trim();
+            appState.shelly = document.getElementById('entity-shelly').value.trim();
+            appState.inverterLoad = document.getElementById('entity-inverter-load').value.trim();
+
+            localStorage.setItem('entity_pv', appState.pv);
+            localStorage.setItem('entity_bat', appState.bat);
+            localStorage.setItem('entity_bat_power', appState.batPower);
+            localStorage.setItem('entity_grid', appState.grid);
+            localStorage.setItem('entity_shelly', appState.shelly);
+            localStorage.setItem('entity_inverter_load', appState.inverterLoad);
+
+            closeConfigModal();
+            fetchDeyeData();
+        }
+
+        function updateFlowLine(elementId, value, reverse = false) {
+            const el = document.getElementById(elementId);
+            if (!el) return;
+            if (Math.abs(value) > 20) {
+                el.className = reverse ? 'flow-line-reverse' : 'flow-line';
+            } else {
+                el.className = 'flow-idle';
+            }
+        }
+
+        async function fetchDeyeData() {
+            try {
+                const res = await fetch(`${window.location.origin}/api/states`, {
+                    headers: { 'Authorization': `Bearer ${appState.token}` }
+                });
+                
+                if (!res.ok) throw new Error('Erro na API / Token Inválido');
+
+                const states = await res.json();
+                
+                document.getElementById('connection-status').className = 'flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 px-3.5 py-2.5 rounded-xl sm:rounded-2xl text-emerald-400 text-xs font-bold uppercase tracking-wider';
+                document.getElementById('connection-status').innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> Online';
+                document.getElementById('last-update').innerText = `Atualizado às ${new Date().toLocaleTimeString()}`;
+
+                const getVal = (entityId) => {
+                    const found = states.find(s => s.entity_id === entityId);
+                    return found ? parseFloat(found.state) : 0;
+                };
+
+                // Labels
+                document.getElementById('lbl-pv').innerText = appState.pv;
+                document.getElementById('lbl-bat-power').innerText = appState.batPower;
+                document.getElementById('lbl-grid').innerText = appState.grid;
+                document.getElementById('lbl-inverter-load').innerText = appState.inverterLoad;
+
+                // 1. Solar
+                const pvW = getVal(appState.pv);
+                document.getElementById('flow-card-pv').innerText = `${pvW.toFixed(0)} W`;
+                document.getElementById('card-pv').innerHTML = `${pvW.toFixed(0)} <span class="text-xs font-normal text-slate-400">W</span>`;
+                document.getElementById('m-pv').innerText = `${pvW.toFixed(0)} W`;
+                updateFlowLine('path-solar-load', pvW);
+
+                // 2. Bateria
+                const batVal = getVal(appState.bat);
+                const batPowerW = getVal(appState.batPower);
+
+                if (batVal !== null) {
+                    document.getElementById('flow-bat-title').innerText = `Bateria (${batVal}%)`;
+                    document.getElementById('bat-soc-text').innerText = `${batVal}%`;
+                    document.getElementById('battery-bar').style.width = `${Math.min(100, Math.max(0, batVal))}%`;
+                    document.getElementById('card-bat').innerHTML = `${batVal} <span class="text-xs font-normal text-slate-400">%</span>`;
+                    document.getElementById('m-bat-lbl').innerText = `Bat (${batVal}%)`;
+                }
+                
+                const batText = `${batPowerW >= 0 ? '+' : ''}${batPowerW.toFixed(0)} W`;
+                document.getElementById('flow-card-bat-power').innerText = batText;
+                document.getElementById('card-bat-sub').innerText = batText;
+                document.getElementById('m-bat').innerText = batText;
+                updateFlowLine('path-bat-load', batPowerW, batPowerW < 0);
+
+                // 3. Deye CT
+                const gridW = getVal(appState.grid);
+                document.getElementById('flow-card-grid').innerText = `${gridW.toFixed(0)} W`;
+                document.getElementById('card-grid-val').innerHTML = `${gridW.toFixed(0)} <span class="text-xs font-normal text-slate-400">W</span>`;
+                document.getElementById('m-grid').innerText = `${gridW.toFixed(0)} W`;
+                updateFlowLine('path-grid-load', gridW, gridW < 0);
+
+                // 4. Shelly
+                const shellyW = getVal(appState.shelly);
+                document.getElementById('flow-card-shelly').innerText = `${shellyW.toFixed(0)} W`;
+                document.getElementById('card-shelly-val').innerHTML = `${shellyW.toFixed(0)} <span class="text-xs font-normal text-slate-400">W</span>`;
+                document.getElementById('m-shelly').innerText = `${shellyW.toFixed(0)} W`;
+                updateFlowLine('path-shelly-load', shellyW, shellyW < 0);
+
+                // 5. Saída Inversor Nativa (Load)
+                const inverterLoadW = getVal(appState.inverterLoad);
+                document.getElementById('card-inverter-load').innerHTML = `${inverterLoadW.toFixed(0)} <span class="text-xs font-normal text-slate-400">W</span>`;
+
+                // 6. Cargas Casa (Calculado)
+                const calculatedLoadW = pvW + batPowerW + shellyW;
+                const finalLoadW = Math.max(0, calculatedLoadW);
+                document.getElementById('flow-card-load').innerText = `${finalLoadW.toFixed(0)} W`;
+                document.getElementById('card-load-val').innerHTML = `${finalLoadW.toFixed(0)} <span class="text-xs font-normal text-slate-400">W</span>`;
+                document.getElementById('m-load').innerText = `${finalLoadW.toFixed(0)} W`;
+
+            } catch (err) {
+                console.error('Erro ao atualizar:', err);
+                document.getElementById('connection-status').className = 'flex items-center gap-2 bg-red-500/10 border border-red-500/20 px-3.5 py-2.5 rounded-xl sm:rounded-2xl text-red-400 text-xs font-bold uppercase tracking-wider';
+                document.getElementById('connection-status').innerHTML = '<span class="w-2 h-2 rounded-full bg-red-400"></span> Erro de API';
+            }
+        }
+
+        window.onload = () => {
+            fetchDeyeData();
+            setInterval(fetchDeyeData, 3500);
+        };
+    </script>
+</body>
+</html>
