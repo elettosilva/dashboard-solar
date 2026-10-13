@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="pt" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Home Assistant - Power Flow Comparativo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Plus Jakarta Sans', 'sans-serif'] },
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #070a12;
+            background-image: 
+                radial-gradient(at 15% 15%, rgba(251, 191, 36, 0.05) 0px, transparent 50%),
+                radial-gradient(at 85% 15%, rgba(59, 130, 246, 0.05) 0px, transparent 50%),
+                radial-gradient(at 50% 85%, rgba(16, 185, 129, 0.05) 0px, transparent 50%);
+            background-attachment: fixed;
+            overflow-x: hidden;
+        }
+
+        .glass-card {
+            background: rgba(15, 23, 42, 0.75);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 15px 35px -10px rgba(0,0,0,0.5);
+        }
+
+        @keyframes flow-dash {
+            to { stroke-dashoffset: -20; }
+        }
+
+        .flow-line {
+            stroke-dasharray: 8, 12;
+            animation: flow-dash 1s linear infinite;
+        }
+
+        .flow-line-reverse {
+            stroke-dasharray: 8, 12;
+            animation: flow-dash 1s linear infinite reverse;
+        }
+
+        .flow-idle {
+            stroke-dasharray: none;
+            animation: none;
+            opacity: 0.15;
+        }
+
+        .node-glow-amber { box-shadow: 0 0 20px rgba(251, 191, 36, 0.2); }
+        .node-glow-emerald { box-shadow: 0 0 20px rgba(16, 185, 129, 0.2); }
+        .node-glow-blue { box-shadow: 0 0 20px rgba(59, 130, 246, 0.2); }
+        .node-glow-teal { box-shadow: 0 0 20px rgba(20, 184, 166, 0.2); }
+        .node-glow-indigo { box-shadow: 0 0 20px rgba(99, 102, 241, 0.2); }
+        .node-glow-purple { box-shadow: 0 0 20px rgba(168, 85, 247, 0.2); }
+
+        @keyframes spin-slow {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .animate-spin-slow { animation: spin-slow 15s linear infinite; }
+    </style>
+</head>
+<body class="text-slate-100 min-h-screen font-sans p-3 sm:p-5 md:p-8 flex flex-col justify-between">
+
+    <div class="max-w-7xl mx-auto w-full space-y-4 sm:space-y-6">
+        
+        <!-- CABEÇALHO -->
+        <header class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 glass-card p-4 sm:p-6 rounded-2xl sm:rounded-3xl relative overflow-hidden">
+            <div class="z-10 flex items-center gap-3">
+                <div class="p-2.5 sm:p-3 bg-gradient-to-tr from-amber-500 to-amber-300 rounded-xl sm:rounded-2xl text-slate-950 font-black shadow-lg shadow-amber-500/20 shrink-0">
+                    <i class="fa-solid fa-bolt text-lg sm:text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl sm:text-2xl md:text-3xl font-extrabold tracking-tight bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">
+                        Power Flow Comparativo
+                    </h1>
+                    <p class="text-[11px] sm:text-xs text-slate-400 font-medium">Deye, Shelly & Inversor Load (W)</p>
+                </div>
+            </div>
+            
+            <div class="flex items-center gap-2.5 w-full sm:w-auto z-10 justify-between sm:justify-end">
+                <div id="connection-status" class="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 px-3.5 py-2.5 rounded-xl sm:rounded-2xl text-emerald-400 text-xs font-bold uppercase tracking-wider">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> Online
+                </div>
+                <button onclick="openConfigModal()" class="bg-slate-800/90 hover:bg-slate-700 border border-slate-700 px-4 py-2.5 rounded-xl sm:rounded-2xl text-xs font-semibold tracking-wide uppercase transition flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-sliders text-amber-400"></i> <span class="hidden xs:inline">Definições</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- DIAGRAMA POWER FLOW PLUS -->
+        <div class="glass-card p-4 sm:p-6 md:p-10 rounded-2xl sm:rounded-3xl relative overflow-hidden flex flex-col items-center">
+            
+            <div class="w-full flex justify-between items-center mb-4 sm:mb-6">
+                <h2 class="text-[11px] sm:text-xs uppercase tracking-widest text-slate-400 font-bold flex items-center gap-2">
+                    <i class="fa-solid fa-network-wired text-amber-400"></i> Esquema de Fluxo de Energia
+                </h2>
+                <span class="text-[10px] sm:text-xs text-slate-500 font-mono" id="last-update">--:--:--</span>
+            </div>
+
+            <!-- SVG CANVAS PARA DESKTOP E TABLET -->
+            <div class="relative w-full max-w-4xl py-2 md:py-4 min-h-[340px] hidden md:flex items-center justify-center">
+                <svg class="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 800 360" preserveAspectRatio="none">
+                    <path id="path-solar-load" d="M 200 80 L 400 180" stroke="#fbbf24" stroke-width="3" fill="none" class="flow-idle" />
+                    <path id="path-bat-load" d="M 200 280 L 400 180" stroke="#10b981" stroke-width="3" fill="none" class="flow-idle" />
+                    <path id="path-grid-load" d="M 600 80 L 400 180" stroke="#3b82f6" stroke-width="3" fill="none" class="flow-idle" />
+                    <path id="path-shelly-load" d="M 600 280 L 400 180" stroke="#14b8a6" stroke-width="3" fill="none" class="flow-idle" />
+                </svg>
+
+                <div class="grid grid-cols-3 w-full max-w-3xl items-center justify-items-between z-10">
+                    
+                    <!-- ESQUERDA -->
+                    <div class="space-y-10 flex flex-col items-center">
+                        <div class="glass-card p-3 rounded-2xl node-glow-amber border-amber-500/30 flex items-center gap-3 w-44">
+                            <div class="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 text-base shrink-0">
+                                <i class="fa-solid fa-sun animate-spin-slow"></i>
+                            </div>
+                            <div class="overflow-hidden">
+                                <span class="text-[8px] uppercase font-bold text-amber-400 tracking-wider block">Solar (PV)</span>
+                                <h3 class="text-sm font-extrabold text-white truncate" id="flow-card-pv">0 W</h3>
+                            </div>
+                        </div>
+
+                        <div class="glass-card p-3 rounded-2xl node-glow-emerald border-emerald-500/30 flex items-center gap-3 w-44">
+                            <div class="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 text-base shrink-0">
+                                <i class="fa-solid fa-car-battery"></i>
+                            </div>
+                            <div class="overflow-hidden">
+                                <span class="text-[8px] uppercase font-bold text-emerald-400 tracking-wider block" id="flow-bat-title">Bateria (0%)</span>
+                                <h3 class="text-xs font-extrabold text-white truncate" id="flow-card-bat-power">+0 W</h3>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- CENTRO: CASA CALCULADO -->
+                    <div class="flex flex-col items-center justify-center">
+                        <div class="glass-card p-4 rounded-3xl node-glow-purple border-purple-500/40 flex flex-col items-center text-center w-40 bg-slate-900/90 shadow-2xl">
+                            <div class="w-12 h-12 rounded-2xl bg-purple-500/15 border border-purple-500/30 flex items-center justify-center text-purple-300 text-lg mb-2 shadow-inner">
+                                <i class="fa-solid fa-house-laptop"></i>
+                            </div>
+                            <span class="text-[8px] uppercase font-bold text-purple-400 tracking-wider block">Casa (Calc.)</span>
+                            <h3 class="text-base font-black text-white mt-0.5" id="flow-card-load">0 W</h3>
+                        </div>
+                    </div>
+
+                    <!-- DIREITA -->
+                    <div class="space-y-10 flex flex-col items-center">
+                        <div class="glass-card p-3 rounded-2xl node-glow-blue border-blue-500/30 flex items-center gap-3 w-44">
+                            <div class="w-9 h-9 rounded-xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-blue-400 text-base shrink-0">
+                                <i class="fa-solid fa-tower-cell"></i>
+                            </div>
+                            <div class="overflow-hidden">
+                                <span class="text-[8px] uppercase font-bold text-blue-400 tracking-wider block">Rede (Deye)</span>
+                                <h3 class="text-sm font-extrabold text-white truncate" id="flow-card-grid">0 W</h3>
+                            </div>
+                        </div>
+
+                        <div class="glass-card p-3 rounded-2xl node-glow-teal border-teal-500/30 flex items-center gap-3 w-44">
+                            <div class="w-9 h-9 rounded-xl bg-teal-500/10 border border-teal-500/30 flex items-center justify-center text-teal-400 text-base shrink-0">
+                                <i class="fa-solid fa-bolt-lightning"></i>
+                            </div>
+                            <div class="overflow-hidden">
+                                <span class="text-[8px] uppercase font-bold text-teal-400 tracking-wider block">Rede (Shelly)</span>
+                                <h3 class="text-sm font-extrabold text-white truncate" id="flow-card-shelly">0 W</h3>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- VISTA MOBILE MELHORADA -->
+            <div class="grid grid-cols-2 gap-3 w-full md:hidden my-2">
+                <div class="glass-card p-3 rounded-2xl border-amber-500/30 flex items-center gap-3">
+                    <i class="fa-solid fa-sun text-amber-400 text-lg"></i>
+                    <div><span class="text-[9px] text-slate-400 block">Solar</span><strong class="text-xs text-white" id="m-pv">0 W</strong></div>
+                </div>
+                <div class="glass-card p-3 rounded-2xl border-emerald-500/30 flex items-center gap-3">
+                    <i class="fa-solid fa-car-battery text-emerald-400 text-lg"></i>
+                    <div><span class="text-[9px] text-slate-400 block" id="m-bat-lbl">Bateria</span><strong class="text-xs text-white" id="m-bat">0 W</strong></div>
+                </div>
+                <div class="glass-card p-3 rounded-2xl border-blue-500/30 flex items-center gap-3">
+                    <i class="fa-solid fa-tower-cell text-blue-400 text-lg"></i>
+                    <div><span class="text-[9px] text-slate-400 block">Deye CT</span><strong class="text-xs text-white" id="m-grid">0 W</strong></div>
+                </div>
+                <div class="glass-card p-3 rounded-2xl border-teal-500/30 flex items-center gap-3">
+                    <i class="fa-solid fa-bolt-lightning text-teal-400 text-lg"></i>
+                    <div><span class="text-[9px] text-slate-400 block">Shelly</span><strong class="text-xs text-white" id="m-shelly">0 W</strong></div>
+                </div>
+                <div class="glass-card p-3 rounded-2xl border-purple-500/40 col-span-2 flex items-center justify-between bg-purple-500/10">
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center text-purple-300 text-sm">
+                            <i class="fa-solid fa-house-laptop"></i>
+                        </div>
+                        <div>
+                            <span class="text-[9px] text-purple-300 font-bold uppercase tracking-wider block">Cargas Casa (Calc.)</span>
+                        </div>
+                    </div>
+                    <strong class="text-sm text-purple-200" id="m-load">0 W</strong>
+                </div>
+            </div>
+
+            <!-- BARRA DA BATERIA -->
+            <div class="w-full max-w-3xl mt-4 pt-4 border-t border-slate-800/80 flex flex-col gap-1.5">
+                <div class="flex justify-between text-xs font-semibold">
+                    <span class="text-slate-400">Estado de Carga da Bateria (SOC)</span>
+                    <span class="text-emerald-400 font-bold" id="bat-soc-text">0%</span>
+                </div>
+                <div class="w-full bg-slate-800/80 rounded-full h-2.5 overflow-hidden border border-slate-700/50">
+                    <div id="battery-bar" class="bg-gradient-to-r from-emerald-500 to-teal-400 h-2.5 rounded-full transition-all duration-500" style="width: 0%"></div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- GRADE DE CARTÕES DETALHADOS (6 CARTÕES) -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 sm:gap-6">
+
+            <!-- 1. SOLAR -->
+            <div class="glass-card p-5 rounded-2xl glow-amber border-amber-500/20 flex flex-col justify-between">
+                <div>
+                    <span class="text-[10px] uppercase font-bold tracking-widest text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded-full border border-amber-400/20">Solar</span>
+                    <h3 class="text-xl font-extrabold text-white mt-2" id="card-pv">0 <span class="text-xs font-normal text-slate-400">W</span></h3>
+                </div>
+                <div class="mt-4 pt-2 border-t border-slate-800 text-[10px] text-slate-400 truncate" id="lbl-pv">sensor.deye_pv_power</div>
+            </div>
+
+            <!-- 2. BATERIA -->
+            <div class="glass-card p-5 rounded-2xl glow-emerald border-emerald-500/20 flex flex-col justify-between">
+                <div>
+                    <span class="text-[10px] uppercase font-bold tracking-widest text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded-full border border-emerald-400/20">Bateria</span>
+                    <h3 class="text-xl font-extrabold text-white mt-2" id="card-bat">0 <span class="text-xs font-normal text-slate-400">%</span></h3>
+                    <p class="text-[11px] font-semibold text-emerald-400 mt-0.5" id="card-bat-sub">+0 W</p>
+                </div>
+                <div class="mt-4 pt-2 border-t border-slate-800 text-[10px] text-slate-400 truncate" id="lbl-bat-power">sensor.deye_battery_power</div>
+            </div>
+
+            <!-- 3. REDE DEYE CT -->
+            <div class="glass-card p-5 rounded-2xl glow-blue border-blue-500/20 flex flex-col justify-between">
+                <div>
+                    <span class="text-[10px] uppercase font-bold tracking-widest text-blue-400 bg-blue-400/10 px-2 py-0.5 rounded-full border border-blue-400/20">Rede (Deye CT)</span>
+                    <h3 class="text-xl font-extrabold text-white mt-2" id="card-grid-val">0 <span class="text-xs font-normal text-slate-400">W</span></h3>
+                </div>
+                <div class="mt-4 pt-2 border-t border-slate-800 text-[10px] text-slate-400 truncate" id="lbl-grid">sensor.deye_external_ct1_power</div>
+            </div>
+
+            <!-- 4. REDE SHELLY -->
+            <div class="glass-card p-5 rounded-2xl glow-teal border-teal-500/20 flex flex-col justify-between">
+                <div>
+                    <span class="text-[10px] uppercase font-bold tracking-widest text-teal-400 bg-teal-400/10 px-2 py-0.5 rounded-full border border-teal-400/20">Rede (Shelly)</span>
+                    <h3 class="text-xl font-extrabold text-white mt-2" id="card-shelly-val">0 <span class="text-xs font-normal text-slate-400">W</span></h3>
+                </div>
+                <div class="mt-4 pt-2 border-t border-slate-800 text-[10px] text-slate-400 truncate">Shelly EM</div>
+            </div>
+
+            <!-- 5. SAÍDA INVERSOR (LOAD) -->
+            <div class="glass-card p-5 rounded-2xl glow-indigo border-indigo-500/20 flex flex-col justify-between">
+                <div>
+                    <span class="text-[10px] uppercase font-bold tracking-widest text-indigo-400 bg-indigo-400/10 px-2 py-0.5 rounded-full border border-indigo-500/20">Saída Inversor</span>
+                    <h3 class="text-xl font-extrabold text-white mt-2" id="card-inverter-load">0 <span class="text-xs font-normal text-slate-400">W</span></h3>
+                </div>
+                <div class="mt-4 pt-2 border-t border-slate-800 text-[10px] text-slate-400 truncate" id="lbl-inverter-load">sensor.deye_load_l1_power</div>
+            </div>
+
+            <!-- 6. CASA (CALCULADO) -->
+            <div class="glass-card p-5 rounded-2xl glow-purple border-purple-500/20 flex flex-col justify-between">
+                <div>
+                    <span class="text-[10px] uppercase font-bold tracking-widest text-purple-400 bg-purple-400/10 px-2 py-0.5 rounded-full border border-purple-400/20">Casa (Calc.)</span>
+                    <h3 class="text-xl font-extrabold text-white mt-2" id="card-load-val">0 <span class="text-xs font-normal text-slate-400">W</span></h3>
+                </div>
+                <div class="mt-4 pt-2 border-t border-slate-800 text-[10px] text-purple-400 font-semibold truncate">PV + Bat + Shelly</div>
+            </div>
+
+        </div>
+
+    </div>
+
+    <!-- MODAL DE CONFIGURAÇÃO -->
+    <div id="config-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-md hidden items-center justify-center p-3 sm:p-4 z-50">
+        <div class="glass-card bg-slate-900/95 max-w-xl w-full p-6 sm:p-8 rounded-2xl sm:rounded-3xl border border-slate-700/60 space-y-4 max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div class="flex justify-between items-center border-b border-slate-800 pb-3 sm:pb-4">
+                <h3 class="text-lg sm:text-xl font-extrabold flex items-center gap-3 text-white">
+                    <i class="fa-solid fa-sliders text-amber-400"></i> Ajustar Entidades
+                </h3>
+                <button onclick="closeConfigModal()" class="text-slate-400 hover:text-white transition p-2">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-amber-400 mb-1">Produção Solar (PV Power)</label>
+                    <input type="text" id="entity-pv" class="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-100 font-mono">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-emerald-400 mb-1">Bateria SOC (%)</label>
+                    <input type="text" id="entity-bat" class="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-100 font-mono">
+                </div>
+                <div>
+         
